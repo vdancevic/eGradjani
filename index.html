@@ -1,175 +1,571 @@
 <!DOCTYPE html>
-<html>
-    <meta charset="utf-8">
-    <style>
-  path:hover {
-	fill-opacity: .7;
+<meta charset="utf-8">
+
+<!--importana datoteka mapStyle s izgledom,veličinama, poravnanjima i bojama elemenata -->
+<style>
+
+    @import url(mapStyle.css);
+    path:hover {
+    fill-opacity: .5;
 }
-
-
-
-#tooltip {   
-	  position: absolute;            
-		text-align: center;
-		padding: 20px;             
-		margin: 10px;
-		font: 12px sans-serif;        
-		background: lightsteelblue;   
-		border: 1px;      
-		border-radius: 2px;           
-		pointer-events: none;         
-	}
-	#tooltip h4{
+h1{
     text-align: center;
-		margin:0;
-		font-size:14px;
-	}
-	#tooltip{
-		background:rgba(0,0,0,0.9);
-		border:1px solid grey;
-		border-radius:5px;
-		font-size:12px;
-		width:auto;
-		padding:4px;
-		color:black;
-		opacity:0;
-	}
-	#tooltip table{
-		table-layout:fixed;
-	}
-	#tooltip tr td{
-		padding:0;
-		margin:0;
-	}
-	#tooltip tr td:nth-child(1){
-		width:100px;
-	}
-	#tooltip tr td:nth-child(2){
-		text-align:center;
-	}
-    </style>
+}
+h4{
+    text-align: center;
+}
+body{
+    background: lightgoldenrodyellow;
+}
+div{
+    background: white;
+}
 
-    <head>
-     <script src="http://d3js.org/d3.v3.min.js"></script>
-     <script src="http://d3js.org/topojson.v1.min.js"></script>
-     <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
-    </head>
+.axis {
+    font: 10px sans-serif;
+  }
+
+  .axis path,
+  .axis line {
+    fill: none;
+    stroke: #000;
+    shape-rendering: crispEdges;
+  }
+
+</style>
 
 
-    <body>
-     
-    <script>
+<!-- U radu je korišten d3.v3.js -->
+<script src="https://d3js.org/d3.v3.min.js"></script>
+<!-- dodano za korištenje tooltip prikaza -->
+<script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
 
-    var width = 960;
-    var height = 700;
-    active = d3.select(null);
 
-    var projection = d3.geo.mercator()
-                           .center([0, 10])
-                           .scale(6000)
-                           .translate([17600, 4500])
-                           .rotate([-180, 0]);
+<body>
+    <!-- Naslov na stranici -->
+    <h1>Prikaz korisnika sustava eGrađani</h1>
+    <hr>
+   
+    <!-- Tablica koja sadrži divove s njihovim id-jevima-->
+    <table border="0" cellpadding="60" style="overflow-y: scroll;">
+        <tr>
+            <td><div id="table_container" class="csvTable"></div></td>
+            <td><div id="map_container"></div></td>
+            <td><div id="graf_container"></div></td>
+        </tr>
+    </table>
 
-    var path = d3.geo.path()
-                     .projection(projection);
+<script>
 
-    var svg = d3.select("body")
-                .append("svg")
-                .attr("width", width)
-                .attr("height", height)
-                .style("background", "lightsteelblue")
-                .on("click", stopped, true);
+//Širina i visina 
+var w = 600;
+var h = 600;
+var active;
+var jsonOutside;
+
+//definicija mercator() i postavljanje zooma karte
+var projection = d3.geo.mercator()
+    .center([25, 44.5])
+    .rotate([8.2, 0])
+    .scale(5000)
+    .translate([w / 2, 4*h / 7]);
     
-    var g = svg.append("g");
 
-    var zoom = d3.behavior.zoom()
-    .translate([0, 0])
-    .scale(1)
-    .scaleExtent([1, 8])
-    .on("zoom", zoomed);
+//definicija generatora puta
+var path = d3.geo.path()
+                 .projection(projection);
 
-    var tooltip = d3.select("body")
-                    .append("div")
-                    .style("position", "absolute")
-                    .style("background","#37DC00")
-                    .style("visibility", "hidden");
+//Kreiranje svg elementa za kartu
+var svg = d3.select("#map_container")
+            .append("svg")
+            .attr("width", w)
+            .attr("height", h);
 
-    svg.call(zoom.event);
+// postotak kojim je iskazan broj korisnika sustava eGrađani kroz broj stanovnika  
+//Podaci preuzeti iz pdf: www.hgk.hr › analiza-zupanija-2018-web5bd31ccf68e7f
+ var egradjeni = [
+            {"Grad Zagreb":32.6},
+            {"Splitsko-dalmatinska":16.36},
+            {"Primorsko-goranska":21.92},
+            {"Zagrebačka":18.16},
+            {"Osječko-baranjska":15.42},
+            {"Istarska":22.07},
+            {"Varaždinska":19.01},
+            {"Zadarska":15.74},
+            {"Sisačko-moslavačka":14.47},
+            {"Krapinsko-zagorska":16.98},
+            {"Vukovarsko-srijemska":12.42},
+            {"Međimurska":18.7},
+            {"Brodsko-posavska":12.5},
+            {"Dubrovačko-neretvanska":15.85},
+            {"Karlovačka":14.3},
+            {"Koprivničko-križevačka":15.89},
+            {"Bjelovarsko-bilogorska":12.45},
+            {"Šibensko-kninska":13.08},
+            {"Virovitičko-podravska":12.78},
+            {"Požeško-slavonska":11.96},
+            {"Ličko-senjska":12.39}
+        ]
+//polje data u koje spremamo vrijednosti iz egradjani varijable
+var data = [];
+    for (i in egradjeni){
+        for (value in egradjeni[i]){
+        data.push(egradjeni[i][value])
+        }
+    }
+//postotak obrazovanih po županijama
+//Podaci preuzeti iz pdf: www.hgk.hr › analiza-zupanija-2018-web5bd31ccf68e7f
+var obrazovanje = [
+            {"Grad Zagreb":86.93},
+            {"Splitsko-dalmatinska":83.09},
+            {"Primorsko-goranska":84.97},
+            {"Zagrebačka":76.82},
+            {"Osječko-baranjska":73.08},
+            {"Istarska":80.78},
+            {"Varaždinska":74.46},
+            {"Zadarska":77.97},
+            {"Sisačko-moslavačka":72.31},
+            {"Krapinsko-zagorska":69.67},
+            {"Vukovarsko-srijemska":69.31},
+            {"Međimurska":71.20},
+            {"Brodsko-posavska":67.75},
+            {"Dubrovačko-neretvanska":83.74},
+            {"Karlovačka":74.26},
+            {"Koprivničko-križevačka":62.49},
+            {"Bjelovarsko-bilogorska":65.52},
+            {"Šibensko-kninska":78.96},
+            {"Virovitičko-podravska":63.31},
+            {"Požeško-slavonska":67.92},
+            {"Ličko-senjska":73.73}
+        ]
+//polje data2 u koje spremamo vrijednosti iz obrazovanje varijable
+var data2 = [];
+    for (i in obrazovanje){
+        for (value in obrazovanje[i]){
+                data2.push(obrazovanje[i][value])
+            }
+        }
+//indeks razvijenosti po županijama
+//Podaci preuzeti iz pdf: www.hgk.hr › analiza-zupanija-2018-web5bd31ccf68e7f
+var razvijenost = [
+            {"Grad Zagreb":186.44},
+            {"Splitsko-dalmatinska":93.75},
+            {"Primorsko-goranska":139.21},
+            {"Zagrebačka":124.23},
+            {"Osječko-baranjska":46.07},
+            {"Istarska":156.80},
+            {"Varaždinska":53.34},
+            {"Zadarska":106.39},
+            {"Sisačko-moslavačka":38.70},
+            {"Krapinsko-zagorska":73.24},
+            {"Vukovarsko-srijemska":18.73},
+            {"Međimurska":69.65},
+            {"Brodsko-posavska":18.43},
+            {"Dubrovačko-neretvanska":120.84},
+            {"Karlovačka":56.34},
+            {"Koprivničko-križevačka":59.19},
+            {"Bjelovarsko-bilogorska":23.29},
+            {"Šibensko-kninska":80.93},
+            {"Virovitičko-podravska":5.76},
+            {"Požeško-slavonska":33.81},
+            {"Ličko-senjska":64.82}
+    ]
+//polje data3 u koje spremamo vrijednosti iz razvijenost varijable
+var data3 = [];
+    for (i in razvijenost){
+        for (value in razvijenost[i]){
+               data3.push(razvijenost[i][value])
+            }
+        }
+
+        //definicija margina i širine i visine       
+        var margin = {top: 60, bottom: 120, left:100, right: 100};
+        var width = 600 - margin.left - margin.right;
+        var height = 400 - margin.top - margin.bottom;
+
+        //varijabla x u koju je spremljena oridinalna skala brojeva od 0 do širine(var width)
+        //koristimo kasnije za x os na grafu korisnici/udio obrazovanih
+        var x = d3.scale.ordinal()
+            .domain(d3.range(data.length))
+            .rangePoints([0, width]);
+        //varijabla y u koju je spremljena linearna skala brojeva od 0 do visine(var heigth)
+        //koristimo kasnije za y os na grafu korisnici/udio obrazovanih
+        //zbog d3.max(data2) ide do najvećeg broja koji se pojavljuje u data2 polju odnosno 86.93
+        var y = d3.scale.linear()
+            .domain([0, d3.max(data2)])
+            .range([height, 0]);
+
+        //varijabla x1 u koju je spremljena oridinalna skala brojeva od 0 do širine(var width)
+        //koristimo kasnije za x os na grafu korisnici/indeks razvijenosti
+        var x1 = d3.scale.ordinal()
+            .domain(d3.range(data3.length))
+            .rangePoints([0, width]);
+        //varijabla y1 u koju je spremljena linearna skala brojeva od 0 do visine(var heigth)
+        //koristimo kasnije za y os na grafu korisnici/indeks razvijenosti
+        //zbog d3.max(data3) ide do najvećeg broja koji se pojavljuje u data2 polju odnosno 186.44
+        var y1 = d3.scale.linear()
+            .domain([0, d3.max(data3)])
+            .range([height, 0]);
+        //kreiranje svg1 elementa za graf korisnici/udio obrazovanih
+        var svg1 = d3.select("#graf_container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.bottom + margin.top)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top +")");
+        //kreiranje svg2 elementa za graf korisnici/indeks razvijenosti
+        var svg2 = d3.select("#graf_container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.bottom + margin.top)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top +")");
+
+            //točka u legendi za graf korisnici/udio obrazovanih
+            svg1.append("circle").attr("cx",200).attr("cy",80).attr("r", 6).style("fill", "blue")
+            svg1.append("circle").attr("cx",200).attr("cy",100).attr("r", 6).style("fill", "red")
+            //točka u legendi za graf korisnici/indeks razvijenosti
+            svg2.append("circle").attr("cx",280).attr("cy",50).attr("r", 6).style("fill", "green")
+            svg2.append("circle").attr("cx",280).attr("cy",30).attr("r", 6).style("fill", "blue")
+           
+            //legenda za graf korisnici/udio obrazovanih
+            svg1.append("text").attr("x", 220).attr("y", 80).text("Korisnici sustava eGrađani").style("font-size", "15px").attr("alignment-baseline","middle")
+            svg1.append("text").attr("x", 220).attr("y", 100).text("Udio obrazovanih").style("font-size", "15px").attr("alignment-baseline","middle")
+            //legenda za graf korisnici/indeks razvijenosti
+            svg2.append("text").attr("x", 300).attr("y", 50).text("Indeks razvijenosti").style("font-size", "15px").attr("alignment-baseline","middle")
+            svg2.append("text").attr("x", 300).attr("y", 30).text("Korisnici sustava eGrađani").style("font-size", "15px").attr("alignment-baseline","middle")
+
+            //naslov grafa korisnici/udio obrazovanih
+            svg1.append("text")
+            .attr("transform", "translate(100,0)")
+            .attr("x", -160)
+            .attr("y", -10)
+            .attr("font-size", "24px")
+            .text("Korisnici sustava eGrađani i Udio obrazovanih")
+
+            //naslov grafa korisnici/indeks razvijenosti
+            svg2.append("text")
+            .attr("transform", "translate(100,0)")
+            .attr("x", -160)
+            .attr("y", -10)
+            .attr("font-size", "24px")
+            .text("Korisnici sustava eGrađani i Indeks razvijenosti")
+
+            //učitavanje json datotekte XYZ.json u kojoj se nalaze imena županija, broj korisnika eGradđani sustava i postotak
+            d3.json("XYZ.json", function(error, data) {
+            //pridruživanje podataka
+            data.forEach(function(d) {
+                    d.Zupanija = d.Zupanija;
+                    d.BrojKorisnika = +d.BrojKorisnika;
+            });
+            //isčitavanje imena županija
+            x.domain(data.map(function(d) { return d.Zupanija; }));
+             //postavljanje izgleda x osi za prvi graf
+            svg1.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(xAxis)
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", "-.55em")
+            .attr("transform", "rotate(-90)" );
+
+            //postavljanje oznake na kraju x osi u prvom grafu      
+            svg1.append("text")
+            .attr("x", (width ))
+            .attr("y", (height + (margin.bottom / 2)))
+            .attr("dx", "1em")
+            .attr("dy", "-2.5em")
+            .style("text-anchor", "right")
+            .text("Županije");
+ 
+            //postavljanje izgleda x osi za drugi graf
+            svg2.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(xAxis)
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", "-.55em")
+            .attr("transform", "rotate(-90)" );
+
+            //postavljanje oznake na kraju x osi u drugom grafu     
+            svg2.append("text")
+            .attr("x", (width ))
+            .attr("y", (height + (margin.bottom / 2)))
+            .attr("dx", "1em")
+            .attr("dy", "-2.5em")
+            .style("text-anchor", "right")
+            .text("Županije");
+        });
+
+        //postavljanje  x osi na prvom grafu na dno grafa
+        var xAxis = d3.svg.axis()
+            .scale(x)
+            .orient("bottom")
+        //postavljanje  y osi na prvom grafu na lijevu stranu grafa
+        var yAxis = d3.svg.axis()
+            .scale(y)
+            .orient("left")
+            .ticks(10);
+        //postavljanje  x osi na drugom grafu na dno grafa
+        var xAxis1 = d3.svg.axis()
+            .scale(x1)
+            .orient("bottom")
+        //postavljanje  y osi na drugom grafu na lijevu stranu grafa
+        var yAxis1 = d3.svg.axis()
+            .scale(y1)
+            .orient("left")
+            .ticks(10);
+
+        // //postavljanje oznake na kraju y osi u prvom grafu    
+        svg1.append("g")
+            .attr("class", "y axis")
+            .call(yAxis)
+            .append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", 5)
+            .attr("dy", "-3.5em")
+            .style("text-anchor", "end")
+            .attr("font-size", "14px")
+            .text("Postotak");
+        //postavljanje oznake na kraju y osi u drugom grafu    
+        svg2.append("g")
+            .attr("class", "y axis")
+            .call(yAxis1)
+            .append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", 5)
+            .attr("dy", "-3.5em")
+            .style("text-anchor", "end")
+            .attr("font-size", "14px")
+            .text("Postotak");    
+        //spremanje u varijablu color skale od 20 boja  
+        var color = d3.scale.category20();
+
+        //postavljanje vrijednosti na liniju u prvom grafu
+        var valueline = d3.svg.line()
+            .x(function(d, i) { return x(i); })
+            .y(function(d) { return y(d); });
+
+        //postavljanje vrijednosti na liniju u drugom grafu
+        var valueline1 = d3.svg.line()
+            .x(function(d, i) { return x1(i); })
+            .y(function(d) { return y1(d); });
+
+        //postavljanje vrijednosti iz data polja u prvi graf
+        var linechart = svg1.append("path")
+            .attr("class", "line")
+            .attr("d", valueline(data))
+            .style("stroke", "blue")
+            .style("stroke-width", "3")
+            .attr("fill", "none");
+        //postavljanje vrijednosti iz data2 polja u prvi graf
+        var linechart = svg1.append("path")
+            .attr("class", "line")
+            .attr("d", valueline(data2))
+            .style("stroke", "red")
+            .style("stroke-width", "2")
+            .attr("fill", "none");
+           
+        //postavljanje vrijednosti iz data polja u drugi graf
+        var linechart = svg2.append("path")
+            .attr("class", "line")
+            .attr("d", valueline1(data))
+            .style("stroke", "blue")
+            .style("stroke-width", "3")
+            .attr("fill", "none");
+        //postavljanje vrijednosti iz data3 polja u drugi graf
+        var linechart = svg2.append("path")
+            .attr("class", "line")
+            .attr("d", valueline1(data3))
+            .style("stroke", "green")
+            .style("stroke-width", "2")
+            .attr("fill", "none");
+
+//namještanje palete boja za sijenčanje karte
+var color = d3.scale.linear()
+                    .domain([0, 257.573])  
+                    .range([0, 1]); 
+//dodavanje na svg element rect i on click događaja
+svg.append("rect")
+    .attr("width", w)
+    .attr("height", h)
+    .on("click", reset);
+
+var g = svg.append("g");
+
+
+//funkcija za zoom na karti
+var zoom = d3.behavior.zoom()
+    .scaleExtent([1, 50])
+    .on("zoom", function() {
+    var e = d3.event,
+    tx = Math.min(0, Math.max(e.translate[0], w - w * e.scale)),
+    ty = Math.min(0, Math.max(e.translate[1], h - h * e.scale));
+    zoom.translate([tx, ty]);
+    g.attr("transform", [
+            "translate(" + [tx, ty] + ")",
+            "scale(" + e.scale + ")"
+          ].join(" "));
+        });  
+    //kreiranje tooltipa i vrijednosti koje se trebaju ispisivati u njemu
+    var tip = d3.tip()
+                .attr('class', 'd3-tip')
+                .style("position", "absolute")
+                .style("background","lightblue")
+                .offset([-10, 0])
+                .html(function(d,i) 
+                {
+                return "<h4>"+newdata1[i].Zupanija+"</h4><table>"+"<tr><td>Sjedište:</td><td>"+(newdata1[i].Sjediste)+"</td></tr>"+
+                       "<tr><td>Površina:</td><td>"+(newdata1[i].Povrsina_km2)+"</td><td>km2</td></tr>"+
+                       "<tr><td>Broj stanovnika:</td><td>"+(newdata1[i].Br_stanovnika)+"</td></tr>"+
+                       "<tr><td>Broj korisnika sustava eGrađani:</td><td>"+(newdata1[i].Br_korisnika_egradjani)+"</td></tr>"+
+                       "<tr><td>Indeks razvijenosti:</td><td>"+(newdata1[i].Indeks_razvijenosti)+"</td></tr>"+
+                       "<tr><td>Udio obrazovanog stanovništva:</td><td>"+(newdata1[i].Udio_obrazovanog_stanovistva)+"</td></tr>"+
+			           "<tr><td>Broj općina:</td><td>"+(newdata1[i].Br_opcina)+"</td></tr>"+
+                       "<tr><td>Broj gradova:</td><td>"+(newdata1[i].Br_gradova)+"</td></tr>"+"</table>";
+                })
+                
+                   
+    //imena županija i podaci korišten za tooltip
+    var newdata1 = [
+    {Zupanija:"XIX Dubrovačko-Neretvanska županija",Povrsina_km2:1.781,Br_stanovnika:122.568,Sjediste:"Dubrovnik",Br_opcina:17,Br_gradova:5,Br_korisnika_egradjani:19.427,Indeks_razvijenosti:120.84,Udio_obrazovanog_stanovistva:83.74},
+    {Zupanija:"XV Šibensko-Kninska županija",Povrsina_km2:2.984,Br_stanovnika:109.375,Sjediste:"Šibenik",Br_opcina:15,Br_gradova:5,Br_korisnika_egradjani:14.309,Indeks_razvijenosti:80.93,Udio_obrazovanog_stanovistva:78.96},
+    {Zupanija:"XVII Splitsko-Dalmatinska županija",Povrsina_km2:4.541,Br_stanovnika:454.798,Sjediste:"Split",Br_opcina:39,Br_gradova:16,Br_korisnika_egradjani:74.408,Indeks_razvijenosti:93.75,Udio_obrazovanog_stanovistva:83.09},
+    {Zupanija:"XIII Zadarska županija",Povrsina_km2:3.646,Br_stanovnika:170.017,Sjediste:"Zadar",Br_opcina:28,Br_gradova:6,Br_korisnika_egradjani:26.755,Indeks_razvijenosti:106.39,Udio_obrazovanog_stanovistva:77.97},
+    {Zupanija:"II Krapinsko-Zagorska županija",Povrsina_km2:1.229,Br_stanovnika:132.892,Sjediste:"Krapina",Br_opcina:25,Br_gradova:7,Br_korisnika_egradjani:22.565,Indeks_razvijenosti:73.24,Udio_obrazovanog_stanovistva:69.67},
+    {Zupanija:"IV Karlovačka županija",Povrsina_km2:3.626,Br_stanovnika:128.899,Sjediste:"Karlovac",Br_opcina:17,Br_gradova:5,Br_korisnika_egradjani:18.433,Indeks_razvijenosti:56.34,Udio_obrazovanog_stanovistva:74.26},
+    {Zupanija:"IX Ličko-Senjska županija",Povrsina_km2:5.353,Br_stanovnika:50.927,Sjediste:"Gospić",Br_opcina:8,Br_gradova:4,Br_korisnika_egradjani:6.311,Indeks_razvijenosti:64.82,Udio_obrazovanog_stanovistva:73.73},
+    {Zupanija:"VIII Primorsko-Goranska županija",Povrsina_km2:3.588,Br_stanovnika:296.195,Sjediste:"Rijeka",Br_opcina:22,Br_gradova:14,Br_korisnika_egradjani:64.912,Indeks_razvijenosti:139.21,Udio_obrazovanog_stanovistva:84.97},
+    {Zupanija:"III Sisačko-Moslavačka županija",Povrsina_km2:4.468,Br_stanovnika:172.439,Sjediste:"Sisak",Br_opcina:12,Br_gradova:7,Br_korisnika_egradjani:24.945,Indeks_razvijenosti:38.71,Udio_obrazovanog_stanovistva:72.31},
+    {Zupanija:"I Zagrebačka županija",Povrsina_km2:3.061,Br_stanovnika:317.606,Sjediste:"Zagreb",Br_opcina:25,Br_gradova:9,Br_korisnika_egradjani:59.681,Indeks_razvijenosti:124.23,Udio_obrazovanog_stanovistva:76.82},
+    {Zupanija:"XXI Grad Zagreb",Povrsina_km2:641,Br_stanovnika:790.017,Sjediste:"Zagreb",Br_opcina:0,Br_gradova:1,Br_korisnika_egradjani:257.573,Indeks_razvijenosti:186.44,Udio_obrazovanog_stanovistva:86.93},
+    {Zupanija:"XVIII Istarska županija",Povrsina_km2:2.813,Br_stanovnika:208.055,Sjediste:"Pazin",Br_opcina:31,Br_gradova:10,Br_korisnika_egradjani:45.909,Indeks_razvijenosti:156.81,Udio_obrazovanog_stanovistva:80.78},
+    {Zupanija:"XII Brodsko-Posavska županija",Povrsina_km2:2.031,Br_stanovnika:158.575,Sjediste:"Slavonski Brod",Br_opcina:26,Br_gradova:2,Br_korisnika_egradjani:19.819,Indeks_razvijenosti:18.43,Udio_obrazovanog_stanovistva:67.75},
+    {Zupanija:"XIV Osječko-Baranjska županija",Povrsina_km2:4.155,Br_stanovnika:305.032,Sjediste:"Osijek",Br_opcina:35,Br_gradova:7,Br_korisnika_egradjani:47.031,Indeks_razvijenosti:46.07,Udio_obrazovanog_stanovistva:73.08},
+    {Zupanija:"XI Požeško-Slavonska županija",Povrsina_km2:1.823,Br_stanovnika:78.034,Sjediste:"Požega",Br_opcina:5,Br_gradova:5,Br_korisnika_egradjani:9.330,Indeks_razvijenosti:33.81,Udio_obrazovanog_stanovistva:67.92},
+    {Zupanija:"XVI Vukovarsko-Srijemska županija",Povrsina_km2:2.454,Br_stanovnika:179.521,Sjediste:"Vukovar",Br_opcina:26,Br_gradova:5,Br_korisnika_egradjani:22.289,Indeks_razvijenosti:18.73,Udio_obrazovanog_stanovistva:69.31},
+    {Zupanija:"X Virovitičko-Podravska županija",Povrsina_km2:2.024,Br_stanovnika:84.836,Sjediste:"Virovitica",Br_opcina:13,Br_gradova:3,Br_korisnika_egradjani:10.846,Indeks_razvijenosti:5.76,Udio_obrazovanog_stanovistva:63.31},
+    {Zupanija:"VII Bjelovarsko-Bilogorska županija",Povrsina_km2:2.641,Br_stanovnika:119.764,Sjediste:"Bjelovar",Br_opcina:18,Br_gradova:5,Br_korisnika_egradjani:14.912,Indeks_razvijenosti:23.29,Udio_obrazovanog_stanovistva:65.52},
+    {Zupanija:"VI Koprivničko-Križevačka županija",Povrsina_km2:1.748,Br_stanovnika:115.584,Sjediste:"Koprivnica",Br_opcina:22,Br_gradova:3,Br_korisnika_egradjani:18.362,Indeks_razvijenosti:59.19,Udio_obrazovanog_stanovistva:62.49},
+    {Zupanija:"XX Međimurska županija",Povrsina_km2:729,Br_stanovnika:113.804,Sjediste:"Čakovec",Br_opcina:22,Br_gradova:3,Br_korisnika_egradjani:21.279,Indeks_razvijenosti:69.65,Udio_obrazovanog_stanovistva:71.20},
+    {Zupanija:"V Varaždinska županija",Povrsina_km2:1.262,Br_stanovnika:175.951,Sjediste:"Varaždin",Br_opcina:22,Br_gradova:6,Br_korisnika_egradjani:33.438,Indeks_razvijenosti:53.34,Udio_obrazovanog_stanovistva:74.46}];
+
+    //poziv zoom funkcije            
+    svg.call(zoom);   
+    //poziv tip funkcije
+    svg.call(tip);
+
+    //Učitavanje XYZ.csv datoteke koju ćemo koristiti za tablicu
+    d3.csv("XYZ.csv", function (data) {
+
+    //Učitavanje GeoJSON podataka iz new.json datoteke
+    d3.json("new.json", function (json) {
+   
+      // spajanje csv i json podataka  
+      json.features.forEach(function (d,i) {
+        data.forEach(function (e,j) {
+          if (d.properties.name === e.Županija) {
+            d.properties.value = +e.BrojKorisnika;
+          };
+        })
+      })
       
-    var a = d3.json("cro_regv31.json", function(error, cro)
-    {
-        var data = topojson.feature(cro, cro.objects.layer1);
-        var data1 = topojson.feature(cro, cro.objects.layer1.geometries);
-        var states = g.selectAll("path.county")
-                        .data(data.features)
-                        .enter()
-                        .append("path")
-                        .attr("class", "county")
-                        .attr("id", function(d) { return d.id; })
-                        .attr("d", path) 
-                        .style("fill", "red")
-                        .style("stroke", "gray")
-                        .style("stroke-width", 1)
-                        .style("stroke-opacity", 1)
-                        .on('click', clicked)             
-
- });
- function clicked(d) 
- {
-  d3.select("div").transition()
-                .duration(750)
-                .style("opacity", 1);
-
-  tooltip.style("visibility", "visible")
+      jsonOutside = json; // slanje json kao globalnog tako da se može kliknuti na red u tablici 
+      
+      //nazivi stupaca u tablici
+      var columns = ["Županija", "BrojKorisnika","(%)"];
+       var table = d3.select("#table_container").append("table"),
+             thead = table.append("thead"),
+             tbody = table.append("tbody");
+     
+       // postavljanje naslovnog stupca
+       thead.append("tr")
+             .selectAll("th")
+             .data(columns)
+             .enter()
+             .append("th")
+             .text(function (column) { return column; });
+     
+         // postavljanje reda za svaki objek iz tablice 
+        var rows = tbody.selectAll("tr")
+             .data(data)
+             .enter()
+             .append("tr");
+     
+         // stvaranje ćelije u svakom redu za svkai stupac
+        var cells = rows.selectAll("td")
+             .data(function (row) {
+                 return columns.map(function (column) {
+                     return { column: column, value: row[column] };
+                 });
+             })
+             .enter()
+             .append("td")
+             .text(function (d) { return d.value; }
+             )
+             .on("click", function (d) { tableRowClicked(d); }); 
+       
   
-  d3.select("div").html(function() 
-                      {
-                      return "<h4>"+d.properties.name+"</h4><table>"+
-                             "<tr><td>Sjedište:</td><td>"+(d.properties.Sjediste)+"</td></tr>"+          
-			                 "<tr><td>Površina:</td><td>"+(d.properties.Povrsina_km2)+"</td><td>km2</td></tr>"+
-			                 "<tr><td>Broj stanovnika:</td><td>"+(d.properties.Br_stanovnika_2011)+"</td></tr>"+
-			                 "<tr><td>Broj općina:</td><td>"+(d.properties.Br_opcina)+"</td></tr>"+
-                             "<tr><td>Broj gradova:</td><td>"+(d.properties.Br_gradova)+"</td></tr>"+
-			                 "</table>";
-                      })
-                        tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
-                     
-  var bounds = path.bounds(d),
-      dx = bounds[1][0] - bounds[0][0],
-      dy = bounds[1][1] - bounds[0][1],
-      x = (bounds[0][0] + bounds[1][0]) / 2,
-      y = (bounds[0][1] + bounds[1][1]) / 2,
-      scale = Math.max(1, Math.min(8, 0.85 / Math.max(dx / width, dy / height))),
-      translate = [width / 2 - scale * x, height / 2 - scale * y];
-  
-     g.transition()
-                .duration(750)
-                .attr("transform", "translate(" + translate + ")scale(" + scale + ")");
 
-     g.transition()
-                .duration(750)
-                .delay(10000)
-                .attr("transform", "")
-                
-                
-    d3.select("div").transition()
-                .duration(750)
-                .delay(10000)   
-                .style("visibility", "hidden")
-                .style("opacity", 0);          
-               
+        //Bajndanje podataka i stvaranje jednog patha u GeoJSON feature 
+        g.selectAll("path")
+           .data(json.features)
+           .enter()
+           .append("path")
+           .attr("d", path)
+           .attr("class", "feature")
+           .attr("id", function (d) { return d.properties.name; }) 
+           .on("click", function (d) { click(d); })
+           .style("stroke", "white")
+           .attr('fill-opacity',function(d,i) { return color(newdata1[i].Br_korisnika_egradjani); })
+    	   .on('mouseover', tip.show)
+           .on('mouseout', tip.hide);
+
+
+        g.append("path")
+           .data(json.features)
+           .enter()
+           .append("path")
+           .attr("class", "mesh")
+           .attr("d", path);
+    });
+
+});
+//funkcija klik pomoću koje se izvode promjene na karti 
+function click(d) {
+
+    if (active === d) return reset();
+   g.selectAll(".active").classed("active", false);
+   d3.select("#"+d.properties.name).classed("active", active = d); // changed selection to id
+   
+   var b = path.bounds(d);
+
+   g.transition().duration(750).attr("transform",
+       "translate(" + projection.translate() + ")"
+       + "scale(" + .70 / Math.max((b[1][0] - b[0][0]) / w, (b[1][1] - b[0][1]) / h) + ")"
+       + "translate(" + -(b[1][0] + b[0][0]) / 2 + "," + -(b[1][1] + b[0][1]) / 2 + ")");
+
+}
+//funkcija reset koja vraća izgled karte na prvobitni 
+function reset() {
+    g.selectAll(".active").classed("active", active = false);
+    g.transition().duration(750).attr("transform", "");
+}
+//funkcija za kliknuti red u tablici
+function tableRowClicked(x) {
+
+    jsonOutside.features.forEach(function (d) { 
+        if (x.value === d.properties.name) {
+            var county = d;
+            click(d);  
+        };
+    })
 }
 
-function zoomed() {
-  g.style("stroke-width", 1.5 / d3.event.scale + "px");
-  g.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
-}
-
-function stopped() {
-  if (d3.event.defaultPrevented) d3.event.stopPropagation();
-}
-
-    </script>
-    </body>
+</script>
+</body>
 </html>
-
